@@ -4,3 +4,5 @@ server/data/*.db
 client/dist/
 *-shm
 *-wal
+server/data/*.sqlite
+server/data/*.sqlite-*
