@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import fs from "node:fs";
 import path from "node:path";
 
-const dataDir = path.resolve("server/data");
+const dataDir = path.resolve(process.cwd(), "server", "data");
 fs.mkdirSync(dataDir, { recursive: true });
 export const db = new Database(path.join(dataDir, "radar.sqlite"));
 db.pragma("journal_mode = WAL");
@@ -33,6 +33,11 @@ const categories = [
 ];
 const addCat = db.prepare("INSERT OR IGNORE INTO Categories(name,slug,description) VALUES(?,?,?)");
 categories.forEach(c => addCat.run(...c));
+
+if (process.env.NODE_ENV === "production" &&
+    (!process.env.ADMIN_USERNAME || !process.env.ADMIN_PASSWORD)) {
+  throw new Error("Set ADMIN_USERNAME and ADMIN_PASSWORD");
+}
 
 const adminName = process.env.ADMIN_USERNAME || "admin";
 const adminPass = process.env.ADMIN_PASSWORD || "admin12345";

@@ -1,4 +1,6 @@
 import "dotenv/config";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import express from "express";
 import cors from "cors";
 import jwt from "jsonwebtoken";
@@ -9,7 +11,11 @@ import { db } from "./db.js";
 
 const app=express(), port=process.env.PORT||4000, parser=new Parser();
 app.use(cors()); app.use(express.json({limit:"1mb"}));
-const JWT_SECRET=process.env.JWT_SECRET||"development-secret-change-me";
+const JWT_SECRET = process.env.JWT_SECRET || "development-secret-change-me";
+
+if (process.env.NODE_ENV === "production" && !process.env.JWT_SECRET) {
+  throw new Error("JWT_SECRET is required in production");
+}
 const auth=(req,res,next)=>{try{const token=(req.headers.authorization||"").replace("Bearer ","");req.user=jwt.verify(token,JWT_SECRET);next();}catch{return res.status(401).json({error:"Требуется авторизация"});}};
 const admin=(req,res,next)=>req.user?.role==="admin"?next():res.status(403).json({error:"Недостаточно прав"});
 const rows=(sql,...p)=>db.prepare(sql).all(...p), one=(sql,...p)=>db.prepare(sql).get(...p);
@@ -40,4 +46,18 @@ app.get("/api/drafts",auth,admin,(req,res)=>res.json(rows("SELECT * FROM Drafts 
 app.post("/api/drafts/from-news/:id",auth,admin,(req,res)=>{const n=one("SELECT News.*,Categories.name category FROM News LEFT JOIN Categories ON Categories.id=News.category_id WHERE News.id=?",req.params.id);if(!n)return res.status(404).json({error:"Новость не найдена"});const facts=[n.summary||"Описание не указано",`Источник: ${n.source_name||"не указан"}`];const r=db.prepare("INSERT INTO Drafts(news_id,title,summary,facts,category,source_url,website_text,social_text) VALUES(?,?,?,?,?,?,?,?)").run(n.id,n.title,n.summary,JSON.stringify(facts),n.category,n.source_url,`${n.title}\\n\\n${n.summary||""}\\n\\nИсточник: ${n.source_url||""}`,`${n.title} — ${n.summary||""}`);res.json({id:r.lastInsertRowid,notice:"Создан черновик на основе данных новости. Это шаблон, не AI-генерация."});});
 app.put("/api/drafts/:id",auth,admin,(req,res)=>{const d=req.body;db.prepare("UPDATE Drafts SET title=?,summary=?,website_text=?,social_text=?,status=? WHERE id=?").run(d.title,d.summary,d.website_text,d.social_text,d.status,req.params.id);res.json({ok:true});});
 cron.schedule(process.env.RSS_CRON||"*/30 * * * *",()=>updateFeeds().catch(console.error));
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const clientDist = path.resolve(__dirname, "../../client/dist");
+
+app.use(express.static(clientDist));
+
+app.use((req, res, next) => {
+  if (req.method !== "GET" || req.path.startsWith("/api/")) {
+    return next();
+  }
+
+  res.sendFile(path.join(clientDist, "index.html"), (err) => {
+    if (err) next(err);
+  });
+});
 app.listen(port,()=>console.log(`TII IT Radar API: http://localhost:${port}`));
